@@ -80,4 +80,10 @@ spec:
         name: my-web-app
     minReplicas: 3 # Минимальное количество реплик для стандартной нагрузки
     maxReplicas: 4 # Максимальное количество реплик для пиковой нагрузки
-    targetCPUUtilizationPercentage: 70 # Целевое использование CPU для автоматического масштабирования
+    metrics: # Целевое использование CPU для автоматического масштабирования
+    - type: Resource
+        resource:
+            name: cpu
+            target:
+                type: Utilization
+                averageUtilization: 70
