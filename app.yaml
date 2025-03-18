@@ -1,0 +1,80 @@
+# Настроен запуск веб-приложения. Для запуска подов используется Deployment, который начинает с 3 экземпляров. Их количество может быть увеличено до 4 в пиковые моменты. Настроено распределение по разным узлам, чтобы добиться максимальной отказоустойчивости. Также добавлены ограничения по ресурсам CPU и Memory для подов по описанию из ТЗ. Доступ к приложению обеспечен за счет объекта Service.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: my-web-app
+    labels:
+        app: my-web-app
+spec:
+    replicas: 3 # Сперва запускаем 3 реплики приложения. Необходимо для обеспечения высокой доступности и нагрузки
+    selector:
+        matchLabels:
+            app: my-web-app
+    template:
+        metadata:
+            labels:
+                app: my-web-app
+        spec:
+            containers:
+            - name: my-web-app
+                image: my-web-app:latest # Имя образа приложения
+                ports:
+                - containerPort: 80 # Порт, который приложение использует
+                resources:
+                    requests:  # Запрашиваемые ресурсы
+                        memory: "128Mi" # Начальные ресурсы памяти
+                        cpu: "0.1" # Начальные ресурсы CPU
+                    limits: # Ограничения ресурсов
+                        memory: "128Mi" # Максимальное использование памяти
+                        cpu: "0.5" # Максимальное использование CPU. Указал чуть больше для обработки первых запросов
+                readinessProbe: # Проверка готовности контейнера
+                    httpGet:
+                        path: /health # Путь для проверки готовности
+                        port: 80
+                    initialDelaySeconds: 10 # Задержка перед первой проверкой готовности
+                    periodSeconds: 5 # Период проверки готовности
+                livenessProbe: # Повторная проверка жизнеспособности контейнера
+                    httpGet:
+                        path: /health
+                        port: 80
+                    initialDelaySeconds: 10 # Задержка перед первой проверкой жизнеспособности
+                    periodSeconds: 5 # Повторная проверка жизнеспособности
+            affinity: # Настройка для распределения подов по разным узлам в зонах доступности. Экземпляры приложения не будут запущены на узле, где уже есть под с меткой app: my-web-app
+                podAntiAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                    - labelSelector:
+                            matchLabels:
+                                app: my-web-app
+                        topologyKey: "topology.kubernetes.io/zone" # Распределение по зонам для обеспечения доступности
+
+# Доступ к приложению
+---
+apiVersion: v1
+kind: Service
+metadata:
+    name: my-web-app-service
+spec:
+    selector:
+        app: my-web-app
+    ports:
+    - protocol: TCP
+        port: 80 # Порт сервиса
+        targetPort: 80 # Порт контейнера
+    type: LoadBalancer # Тип сервиса для внешнего доступа к приложению
+
+
+# Автомасштабирование
+---
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+    name: my-web-app-hpa
+spec:
+    scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: my-web-app
+    minReplicas: 3 # Минимальное количество реплик для стандартной нагрузки
+    maxReplicas: 4 # Максимальное количество реплик для пиковой нагрузки
+    targetCPUUtilizationPercentage: 70 # Целевое использование CPU для автоматического масштабирования
